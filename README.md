@@ -1,35 +1,35 @@
-# ⚡ SlaughterBot (FNF V-Slice Bot & Dear ImGui Menu)
+# SlaughterBot (FNF V-Slice Bot & Dear ImGui Menu)
 
-Автономный Open-Source бот и меню в стиле **Dear ImGui (Dark Theme)** для **Friday Night Funkin' (V-Slice v0.8.6+)**.
+An autonomous open-source bot and menu featuring a **Dear ImGui (Dark Theme)** style for **Friday Night Funkin' (V-Slice v0.8.6+)**.
 
-**Автор:** `Slaughterhouse`  
-**Лицензия:** MIT
-
----
-
-## 🪟 Модульная архитектура:
-1. `scripts/modules/SlaughterBotModule.hxc` — Ядро бота (Pure Sick hits, Combo/Score popups, Downscroll, NoHurtCam).
-2. `scripts/modules/SlaughterGuiModule.hxc` — Отдельный GUI-класс с рендером Dear ImGui Dark Theme, перетаскиванием окна мышкой, вкладками и интерактивными чекбоксами.
+**Author:** `Slaughterhouse`  
+**License:** MIT
 
 ---
 
-## 🖱️ Управление и Dear ImGui:
-- **`[INSERT]`** или **`[ESC]`** — Открыть / закрыть ImGui окно.
-- **Мышь:**
-  - Зажми левую кнопку мыши на заголовке окна (Title Bar), чтобы **перетаскивать окно по всему экрану**!
-  - Кнопка **`[-]`** в шапке — Свернуть / Развернуть тело окна (Collapse).
-  - Кнопка **`[x]`** в шапке — Закрыть окно.
-  - Кликай по вкладкам **`[Game]`**, **`[Visuals]`**, **`[Misc]`**, **`[About]`** для переключения.
-  - Кликай по чекбоксам **`[✓]`** для мгновенного переключения настроек.
-- **Клавиатура:**
-  - **`[1] / [2] / [3] / [4]`** или **`[TAB]`** — Переключение вкладок.
-  - **`[A]`** — Переключить верхний чекбокс активной вкладки.
-  - **`[B]`** — Переключить нижний чекбокс активной вкладки.
+## Modular Architecture
+1. `scripts/modules/SlaughterBotModule.hxc` — The bot core (handles Pure Sick hits, Combo/Score popups, Downscroll, and NoHurtCam).
+2. `scripts/modules/SlaughterGuiModule.hxc` — A standalone GUI class featuring Dear ImGui Dark Theme rendering, mouse window dragging, tabs, and interactive checkboxes.
 
 ---
 
-## 🚀 Установка и запуск:
-1. Скопируй папку `fnfbot` в `Friday Night Funkin/mods/`.
-2. Запусти игру. На старте появится карточка: `⚡ SlaughterBot is initializing...`.
-3. После загрузки откроется окно Dear ImGui Dark Theme.
-4. Настрой опции мышкой или клавиатурой и играй!
+## Controls & Dear ImGui Navigation
+- **`[INSERT]`** or **`[ESC]`** — Open / close the ImGui window.
+- **Mouse Controls:**
+  - Hold the Left Mouse Button (LMB) on the title bar to **drag the window across the screen**.
+  - **`[-]`** button in the header — Collapse / Expand the window body.
+  - **`[x]`** button in the header — Close the window.
+  - Click on the **`[Game]`**, **`[Visuals]`**, **`[Misc]`**, or **`[About]`** tabs to switch views.
+  - Click on the checkboxes **`[✓]`** to toggle settings instantly.
+- **Keyboard Controls:**
+  - **`[1] / [2] / [3] / [4]`** or **`[TAB]`** — Switch tabs.
+  - **`[A]`** — Toggle the top checkbox of the active tab.
+  - **`[B]`** — Toggle the bottom checkbox of the active tab.
+
+---
+
+## Installation & Setup
+1. Copy the `fnfbot` folder into your `Friday Night Funkin/mods/` directory.
+2. Launch the game. Upon startup, an initialization card will appear: `SlaughterBot is initializing...`.
+3. Once loaded, the Dear ImGui Dark Theme window will open automatically.
+4. Configure your options using either the mouse or keyboard, and enjoy the game!
