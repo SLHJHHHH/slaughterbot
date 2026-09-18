@@ -1,0 +1,8 @@
+{
+  "title": "SlaughterBot",
+  "description": "Официальный Open-Source Botplay & Assistant для Friday Night Funkin' V-Slice (v0.8.6+). Создано Slaughterhouse.",
+  "author": "Slaughterhouse",
+  "api_version": "0.8.6",
+  "mod_version": "1.0.0",
+  "license": "MIT"
+}

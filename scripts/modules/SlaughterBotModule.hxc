@@ -1,0 +1,946 @@
+// author - Slaughterhouse
+import funkin.modding.module.Module;
+import funkin.play.PlayState;
+import funkin.play.Conductor;
+import flixel.FlxG;
+import flixel.FlxSprite;
+import flixel.text.FlxText;
+import flixel.group.FlxGroup;
+import openfl.events.KeyboardEvent;
+
+class SlaughterBotModule extends Module {
+    public var botEnabled:Bool = true;
+    public var autoSustains:Bool = true;
+    public var hideOpponentStrum:Bool = false;
+    public var noHurtCam:Bool = true;
+    public var downscroll:Bool = false;
+    public var topProgressBar:Bool = false;
+
+    public var currentCategory:Int = 0;
+
+    public var isGuiOpen:Bool = false;
+    public var guiGroup:FlxGroup = null;
+
+    public var mainBorder:FlxSprite = null;
+    public var mainBg:FlxSprite = null;
+    public var sidebarBg:FlxSprite = null;
+    public var sidebarDivider:FlxSprite = null;
+
+    public var logoTitle:FlxText = null;
+    public var logoSub:FlxText = null;
+    public var navHeader:FlxText = null;
+
+    public var navTab0:FlxText = null;
+    public var navTab1:FlxText = null;
+    public var navTab2:FlxText = null;
+    public var navIndicator:FlxSprite = null;
+
+    public var contentTitle:FlxText = null;
+    public var contentDivider:FlxSprite = null;
+
+    public var card1Bg:FlxSprite = null;
+    public var card1Border:FlxSprite = null;
+    public var card1Accent:FlxSprite = null;
+    public var card1Title:FlxText = null;
+    public var card1Switch:FlxText = null;
+    public var card1Body:FlxText = null;
+
+    public var card2Bg:FlxSprite = null;
+    public var card2Border:FlxSprite = null;
+    public var card2Accent:FlxSprite = null;
+    public var card2Title:FlxText = null;
+    public var card2Switch:FlxText = null;
+    public var card2Body:FlxText = null;
+
+    public var footerText:FlxText = null;
+
+    public var initCardGroup:FlxGroup = null;
+    public var initCardBorder:FlxSprite = null;
+    public var initCardBg:FlxSprite = null;
+    public var initCardText:FlxText = null;
+    public var initTimer:Float = 2.2;
+    public var initFinished:Bool = false;
+    public var hasAutoOpenedGui:Bool = false;
+
+    var receptorResetTimes:Array<Float> = [0.0, 0.0, 0.0, 0.0];
+    var isReceptorActive:Array<Bool> = [false, false, false, false];
+    var deadNotes:Array<Dynamic> = [];
+
+    var arrowCodes:Array<Int> = [37, 40, 38, 39];
+    var dfjkCodes:Array<Int> = [68, 70, 74, 75];
+    var wasdCodes:Array<Int> = [65, 83, 87, 68];
+    var singAnims:Array<String> = ["singLEFT", "singDOWN", "singUP", "singRIGHT"];
+
+    public function new() {
+        super("SlaughterBotModule");
+    }
+
+    override function onCreate(event) {
+        super.onCreate(event);
+        initNotificationCard();
+    }
+
+    override function onSongLoaded(event) {
+        super.onSongLoaded(event);
+        resetState();
+        initGui();
+    }
+
+    override function onSongStart(event) {
+        super.onSongStart(event);
+        resetState();
+        initGui();
+    }
+
+    override function onStateChangeEnd(event) {
+        super.onStateChangeEnd(event);
+        guiGroup = null;
+        initCardGroup = null;
+
+        if (!initFinished) {
+            initNotificationCard();
+        }
+
+        initGui();
+        if (isGuiOpen && guiGroup != null) {
+            guiGroup.visible = true;
+            updateGuiTexts();
+        }
+    }
+
+    override function onPause(event) {
+        super.onPause(event);
+        resetReceptors();
+    }
+
+    function resetState() {
+        resetReceptors();
+        deadNotes = [];
+    }
+
+    function resetReceptors() {
+        for (i in 0...4) {
+            receptorResetTimes[i] = 0.0;
+            isReceptorActive[i] = false;
+            releaseKey(i);
+        }
+    }
+
+    override function onBeatHit(event) {
+        super.onBeatHit(event);
+        if (noHurtCam) {
+            suppressCameraShakes();
+        }
+    }
+
+    override function onStepHit(event) {
+        super.onStepHit(event);
+        if (noHurtCam) {
+            suppressCameraShakes();
+        }
+    }
+
+    override function onUpdate(event) {
+        super.onUpdate(event);
+
+        var elapsed:Float = (event != null && event.elapsed != null) ? event.elapsed : 0.016;
+
+        if (!initFinished) {
+            if (initCardGroup == null) {
+                initNotificationCard();
+            }
+            initTimer -= elapsed;
+            if (initTimer <= 0.0) {
+                initFinished = true;
+                if (initCardGroup != null) {
+                    initCardGroup.visible = false;
+                }
+                if (!hasAutoOpenedGui) {
+                    hasAutoOpenedGui = true;
+                    isGuiOpen = true;
+                    if (guiGroup != null) {
+                        guiGroup.visible = true;
+                    }
+                    updateGuiTexts();
+                }
+            }
+        }
+
+        if (FlxG.keys.justPressed.INSERT) {
+            toggleGui();
+        }
+
+        if (isGuiOpen) {
+            handleGuiInput();
+        }
+
+        if (PlayState.instance != null) {
+            applyCustomHud(PlayState.instance);
+
+            if (botEnabled && PlayState.instance.subState == null) {
+                processBotLogic();
+            }
+
+            suppressDeadNotes();
+
+            if (noHurtCam) {
+                suppressCameraShakes();
+            }
+        }
+    }
+
+    function suppressCameraShakes() {
+        try {
+            var ps = PlayState.instance;
+            if (ps == null || ps.subState != null) return;
+            if (Conductor.instance == null || Conductor.instance.songPosition <= 0.0) return;
+
+            if (FlxG.camera != null) {
+                try { FlxG.camera.stopShake(); } catch (e:Dynamic) {}
+                try { FlxG.camera._shakeDuration = 0.0; } catch (e:Dynamic) {}
+                try { FlxG.camera._shakeIntensity = 0.0; } catch (e:Dynamic) {}
+                try { FlxG.camera.angle = 0.0; } catch (e:Dynamic) {}
+            }
+
+            if (ps.camHUD != null) {
+                try { ps.camHUD.stopShake(); } catch (e:Dynamic) {}
+                try { ps.camHUD._shakeDuration = 0.0; } catch (e:Dynamic) {}
+                try { ps.camHUD._shakeIntensity = 0.0; } catch (e:Dynamic) {}
+                try { ps.camHUD.angle = 0.0; } catch (e:Dynamic) {}
+            }
+
+            if (ps.camGame != null) {
+                try { ps.camGame.stopShake(); } catch (e:Dynamic) {}
+                try { ps.camGame._shakeDuration = 0.0; } catch (e:Dynamic) {}
+                try { ps.camGame._shakeIntensity = 0.0; } catch (e:Dynamic) {}
+                try { ps.camGame.angle = 0.0; } catch (e:Dynamic) {}
+            }
+        } catch (e:Dynamic) {}
+    }
+
+    function applyCustomHud(ps:PlayState) {
+        try {
+            if (hideOpponentStrum && ps.opponentStrumline != null) {
+                ps.opponentStrumline.visible = false;
+            }
+
+            if (downscroll) {
+                var downY:Float = FlxG.height - 155;
+                if (ps.playerStrumline != null) {
+                    ps.playerStrumline.y = downY;
+                    ps.playerStrumline.isDownscroll = true;
+                    ps.playerStrumline.downscroll = true;
+                    ps.playerStrumline.downScroll = true;
+                }
+                if (!hideOpponentStrum && ps.opponentStrumline != null) {
+                    ps.opponentStrumline.y = downY;
+                    ps.opponentStrumline.isDownscroll = true;
+                    ps.opponentStrumline.downscroll = true;
+                    ps.opponentStrumline.downScroll = true;
+                }
+                ps.isDownscroll = true;
+                ps.downscroll = true;
+                ps.downScroll = true;
+            } else {
+                var upY:Float = 50;
+                if (ps.playerStrumline != null) {
+                    ps.playerStrumline.y = upY;
+                    ps.playerStrumline.isDownscroll = false;
+                    ps.playerStrumline.downscroll = false;
+                    ps.playerStrumline.downScroll = false;
+                }
+                if (!hideOpponentStrum && ps.opponentStrumline != null) {
+                    ps.opponentStrumline.y = upY;
+                    ps.opponentStrumline.isDownscroll = false;
+                    ps.opponentStrumline.downscroll = false;
+                    ps.opponentStrumline.downScroll = false;
+                }
+                ps.isDownscroll = false;
+                ps.downscroll = false;
+                ps.downScroll = false;
+            }
+
+            if (ps.playerStrumline != null) {
+                if (ps.playerStrumline.notes != null) {
+                    var n = (ps.playerStrumline.notes.members != null) ? ps.playerStrumline.notes.members : ps.playerStrumline.notes;
+                    for (i in 0...n.length) {
+                        var item = n[i];
+                        if (item != null && item.members == null) {
+                            try { item.isDownscroll = downscroll; } catch (e:Dynamic) {}
+                            try { item.downscroll = downscroll; } catch (e:Dynamic) {}
+                            try { item.downScroll = downscroll; } catch (e:Dynamic) {}
+                        }
+                    }
+                }
+                if (ps.playerStrumline.holdNotes != null) {
+                    var hn = (ps.playerStrumline.holdNotes.members != null) ? ps.playerStrumline.holdNotes.members : ps.playerStrumline.holdNotes;
+                    for (j in 0...hn.length) {
+                        var item = hn[j];
+                        if (item != null && item.members == null) {
+                            try { item.isDownscroll = downscroll; } catch (e:Dynamic) {}
+                            try { item.downscroll = downscroll; } catch (e:Dynamic) {}
+                            try { item.downScroll = downscroll; } catch (e:Dynamic) {}
+                            try { item.flipY = downscroll; } catch (e:Dynamic) {}
+                        }
+                    }
+                }
+            }
+
+            if (topProgressBar) {
+                var topBarY:Float = 80;
+                if (ps.healthBar != null && ps.healthBar.y != topBarY) ps.healthBar.y = topBarY;
+                if (ps.healthBarBG != null && ps.healthBarBG.y != (topBarY - 4)) ps.healthBarBG.y = topBarY - 4;
+                if (ps.iconP1 != null && ps.iconP1.y != (topBarY - 75)) ps.iconP1.y = topBarY - 75;
+                if (ps.iconP2 != null && ps.iconP2.y != (topBarY - 75)) ps.iconP2.y = topBarY - 75;
+                if (ps.scoreTxt != null && ps.scoreTxt.y != (topBarY + 30)) ps.scoreTxt.y = topBarY + 30;
+                if (ps.timeBar != null && ps.timeBar.y != (topBarY + 55)) ps.timeBar.y = topBarY + 55;
+                if (ps.timeTxt != null && ps.timeTxt.y != (topBarY + 50)) ps.timeTxt.y = topBarY + 50;
+            } else {
+                var bottomBarY:Float = FlxG.height * 0.89;
+                if (ps.healthBar != null && ps.healthBar.y != bottomBarY) ps.healthBar.y = bottomBarY;
+                if (ps.healthBarBG != null && ps.healthBarBG.y != (bottomBarY - 4)) ps.healthBarBG.y = bottomBarY - 4;
+                if (ps.iconP1 != null && ps.iconP1.y != (bottomBarY - 75)) ps.iconP1.y = bottomBarY - 75;
+                if (ps.iconP2 != null && ps.iconP2.y != (bottomBarY - 75)) ps.iconP2.y = bottomBarY - 75;
+                if (ps.scoreTxt != null && ps.scoreTxt.y != (bottomBarY + 30)) ps.scoreTxt.y = bottomBarY + 30;
+            }
+        } catch (e:Dynamic) {}
+    }
+
+    function initNotificationCard() {
+        try {
+            var targetState = FlxG.state;
+            if (targetState == null) return;
+
+            initCardGroup = new FlxGroup();
+
+            var cw:Float = 330;
+            var ch:Float = 44;
+            var cx:Float = FlxG.width - cw - 20;
+            var cy:Float = 20;
+
+            initCardBorder = new FlxSprite(cx - 2, cy - 2);
+            initCardBorder.makeGraphic(334, 48, 0xFFFF2A3C);
+            initCardBorder.scrollFactor.set(0, 0);
+            initCardGroup.add(initCardBorder);
+
+            initCardBg = new FlxSprite(cx, cy);
+            initCardBg.makeGraphic(330, 44, 0xFA0F0F14);
+            initCardBg.scrollFactor.set(0, 0);
+            initCardGroup.add(initCardBg);
+
+            initCardText = new FlxText(cx + 10, cy + 12, cw - 20, "⚡ SlaughterBot is initializing...", 14);
+            initCardText.color = 0xFFFF4455;
+            initCardText.alignment = "center";
+            initCardText.scrollFactor.set(0, 0);
+            initCardGroup.add(initCardText);
+
+            targetState.add(initCardGroup);
+        } catch (e:Dynamic) {}
+    }
+
+    function initGui() {
+        try {
+            var targetState = FlxG.state;
+            if (targetState == null || guiGroup != null) return;
+
+            guiGroup = new FlxGroup();
+
+            var w:Float = 700;
+            var h:Float = 430;
+            var startX:Float = (FlxG.width - w) / 2;
+            var startY:Float = (FlxG.height - h) / 2;
+
+            mainBorder = new FlxSprite(startX - 2, startY - 2);
+            mainBorder.makeGraphic(704, 434, 0xFFFF2A3C);
+            mainBorder.scrollFactor.set(0, 0);
+            guiGroup.add(mainBorder);
+
+            mainBg = new FlxSprite(startX, startY);
+            mainBg.makeGraphic(700, 430, 0xFA121216);
+            mainBg.scrollFactor.set(0, 0);
+            guiGroup.add(mainBg);
+
+            sidebarBg = new FlxSprite(startX, startY);
+            sidebarBg.makeGraphic(200, 430, 0xFA0C0C0F);
+            sidebarBg.scrollFactor.set(0, 0);
+            guiGroup.add(sidebarBg);
+
+            sidebarDivider = new FlxSprite(startX + 200, startY);
+            sidebarDivider.makeGraphic(2, 430, 0xFF25252E);
+            sidebarDivider.scrollFactor.set(0, 0);
+            guiGroup.add(sidebarDivider);
+
+            logoTitle = new FlxText(startX + 18, startY + 18, 170, "SLAUGHTER", 22);
+            logoTitle.color = 0xFFFF2A3C;
+            logoTitle.scrollFactor.set(0, 0);
+            guiGroup.add(logoTitle);
+
+            logoSub = new FlxText(startX + 20, startY + 44, 160, "BOT [beta] • v1.0", 11);
+            logoSub.color = 0xFF777788;
+            logoSub.scrollFactor.set(0, 0);
+            guiGroup.add(logoSub);
+
+            navHeader = new FlxText(startX + 20, startY + 80, 160, "NAVIGATION", 11);
+            navHeader.color = 0xFF555566;
+            navHeader.scrollFactor.set(0, 0);
+            guiGroup.add(navHeader);
+
+            navIndicator = new FlxSprite(startX + 8, startY + 106);
+            navIndicator.makeGraphic(4, 32, 0xFFFF2A3C);
+            navIndicator.scrollFactor.set(0, 0);
+            guiGroup.add(navIndicator);
+
+            navTab0 = new FlxText(startX + 22, startY + 112, 160, "⚡  [1] Game", 15);
+            navTab0.scrollFactor.set(0, 0);
+            guiGroup.add(navTab0);
+
+            navTab1 = new FlxText(startX + 22, startY + 152, 160, "👁  [2] Visuals", 15);
+            navTab1.scrollFactor.set(0, 0);
+            guiGroup.add(navTab1);
+
+            navTab2 = new FlxText(startX + 22, startY + 192, 160, "⚙  [3] Misc", 15);
+            navTab2.scrollFactor.set(0, 0);
+            guiGroup.add(navTab2);
+
+            contentTitle = new FlxText(startX + 220, startY + 18, 450, "GAME ENGINE", 16);
+            contentTitle.color = 0xFFFFFFFF;
+            contentTitle.scrollFactor.set(0, 0);
+            guiGroup.add(contentTitle);
+
+            contentDivider = new FlxSprite(startX + 220, startY + 42);
+            contentDivider.makeGraphic(460, 2, 0xFF25252E);
+            contentDivider.scrollFactor.set(0, 0);
+            guiGroup.add(contentDivider);
+
+            var cX:Float = startX + 220;
+            var cW:Float = 460;
+            var cH:Float = 145;
+
+            var c1Y:Float = startY + 54;
+            card1Border = new FlxSprite(cX - 1, c1Y - 1);
+            card1Border.makeGraphic(462, 147, 0xFF282834);
+            card1Border.scrollFactor.set(0, 0);
+            guiGroup.add(card1Border);
+
+            card1Bg = new FlxSprite(cX, c1Y);
+            card1Bg.makeGraphic(460, 145, 0xFA17171D);
+            card1Bg.scrollFactor.set(0, 0);
+            guiGroup.add(card1Bg);
+
+            card1Accent = new FlxSprite(cX, c1Y);
+            card1Accent.makeGraphic(460, 2, 0xFFFF2A3C);
+            card1Accent.scrollFactor.set(0, 0);
+            guiGroup.add(card1Accent);
+
+            card1Title = new FlxText(cX + 16, c1Y + 14, 260, "", 16);
+            card1Title.color = 0xFFFF4D5E;
+            card1Title.scrollFactor.set(0, 0);
+            guiGroup.add(card1Title);
+
+            card1Switch = new FlxText(cX + 290, c1Y + 12, 154, "", 15);
+            card1Switch.alignment = "right";
+            card1Switch.scrollFactor.set(0, 0);
+            guiGroup.add(card1Switch);
+
+            card1Body = new FlxText(cX + 16, c1Y + 46, 428, "", 13);
+            card1Body.color = 0xFF9999AA;
+            card1Body.scrollFactor.set(0, 0);
+            guiGroup.add(card1Body);
+
+            var c2Y:Float = startY + 215;
+            card2Border = new FlxSprite(cX - 1, c2Y - 1);
+            card2Border.makeGraphic(462, 147, 0xFF282834);
+            card2Border.scrollFactor.set(0, 0);
+            guiGroup.add(card2Border);
+
+            card2Bg = new FlxSprite(cX, c2Y);
+            card2Bg.makeGraphic(460, 145, 0xFA17171D);
+            card2Bg.scrollFactor.set(0, 0);
+            guiGroup.add(card2Bg);
+
+            card2Accent = new FlxSprite(cX, c2Y);
+            card2Accent.makeGraphic(460, 2, 0xFFFF2A3C);
+            card2Accent.scrollFactor.set(0, 0);
+            guiGroup.add(card2Accent);
+
+            card2Title = new FlxText(cX + 16, c2Y + 14, 260, "", 16);
+            card2Title.color = 0xFFFF4D5E;
+            card2Title.scrollFactor.set(0, 0);
+            guiGroup.add(card2Title);
+
+            card2Switch = new FlxText(cX + 290, c2Y + 12, 154, "", 15);
+            card2Switch.alignment = "right";
+            card2Switch.scrollFactor.set(0, 0);
+            guiGroup.add(card2Switch);
+
+            card2Body = new FlxText(cX + 16, c2Y + 46, 428, "", 13);
+            card2Body.color = 0xFF9999AA;
+            card2Body.scrollFactor.set(0, 0);
+            guiGroup.add(card2Body);
+
+            footerText = new FlxText(startX + 20, startY + 395, 660, "[1 - 3 / ← → / TAB] Category   |   [A / B] Toggle Switch   |   [INSERT / ESC] Close Menu", 12);
+            footerText.color = 0xFF777788;
+            footerText.alignment = "center";
+            footerText.scrollFactor.set(0, 0);
+            guiGroup.add(footerText);
+
+            guiGroup.visible = isGuiOpen;
+            targetState.add(guiGroup);
+            updateGuiTexts();
+        } catch (e:Dynamic) {}
+    }
+
+    function toggleGui() {
+        isGuiOpen = !isGuiOpen;
+        if (guiGroup == null) {
+            initGui();
+        }
+        if (guiGroup != null) {
+            guiGroup.visible = isGuiOpen;
+        }
+        updateGuiTexts();
+    }
+
+    function handleGuiInput() {
+        if (FlxG.keys.justPressed.ONE) {
+            currentCategory = 0;
+            updateGuiTexts();
+        } else if (FlxG.keys.justPressed.TWO) {
+            currentCategory = 1;
+            updateGuiTexts();
+        } else if (FlxG.keys.justPressed.THREE) {
+            currentCategory = 2;
+            updateGuiTexts();
+        } else if (FlxG.keys.justPressed.TAB || FlxG.keys.justPressed.RIGHT) {
+            currentCategory = (currentCategory + 1) % 3;
+            updateGuiTexts();
+        } else if (FlxG.keys.justPressed.LEFT) {
+            currentCategory = (currentCategory + 2) % 3;
+            updateGuiTexts();
+        } else if (FlxG.keys.justPressed.UP) {
+            currentCategory = (currentCategory + 2) % 3;
+            updateGuiTexts();
+        } else if (FlxG.keys.justPressed.DOWN) {
+            currentCategory = (currentCategory + 1) % 3;
+            updateGuiTexts();
+        }
+
+        if (currentCategory == 0) {
+            if (FlxG.keys.justPressed.A) {
+                botEnabled = !botEnabled;
+                if (!botEnabled) resetReceptors();
+                updateGuiTexts();
+            } else if (FlxG.keys.justPressed.B) {
+                autoSustains = !autoSustains;
+                updateGuiTexts();
+            }
+        } else if (currentCategory == 1) {
+            if (FlxG.keys.justPressed.A) {
+                hideOpponentStrum = !hideOpponentStrum;
+                if (PlayState.instance != null && PlayState.instance.opponentStrumline != null) {
+                    PlayState.instance.opponentStrumline.visible = !hideOpponentStrum;
+                }
+                updateGuiTexts();
+            } else if (FlxG.keys.justPressed.B) {
+                noHurtCam = !noHurtCam;
+                updateGuiTexts();
+            }
+        } else if (currentCategory == 2) {
+            if (FlxG.keys.justPressed.A) {
+                downscroll = !downscroll;
+                updateGuiTexts();
+            } else if (FlxG.keys.justPressed.B) {
+                topProgressBar = !topProgressBar;
+                updateGuiTexts();
+            }
+        }
+
+        if (FlxG.keys.justPressed.ESCAPE) {
+            toggleGui();
+        }
+    }
+
+    function updateGuiTexts() {
+        if (guiGroup == null) return;
+
+        var startY:Float = (FlxG.height - 430) / 2;
+        if (navIndicator != null) {
+            navIndicator.y = startY + 106 + (currentCategory * 40);
+        }
+
+        if (navTab0 != null) {
+            navTab0.color = (currentCategory == 0) ? 0xFFFFFFFF : 0xFF666677;
+        }
+        if (navTab1 != null) {
+            navTab1.color = (currentCategory == 1) ? 0xFFFFFFFF : 0xFF666677;
+        }
+        if (navTab2 != null) {
+            navTab2.color = (currentCategory == 2) ? 0xFFFFFFFF : 0xFF666677;
+        }
+
+        if (currentCategory == 0) {
+            if (contentTitle != null) contentTitle.text = "GAME ENGINE SETTINGS";
+
+            if (card1Title != null) card1Title.text = "[A]  Botplay Engine";
+            if (card1Switch != null) {
+                card1Switch.text = botEnabled ? "[ ● ON ]" : "[ ○ OFF ]";
+                card1Switch.color = botEnabled ? 0xFFFF2A3C : 0xFF555566;
+            }
+            if (card1Body != null) {
+                card1Body.text = "Target Hit Timing: SICK! (0ms offset)\nJudgements & Combo: Native display active\nDead Note Suppression: Multi-layer active";
+            }
+
+            if (card2Title != null) card2Title.text = "[B]  Auto Sustains";
+            if (card2Switch != null) {
+                card2Switch.text = autoSustains ? "[ ● ON ]" : "[ ○ OFF ]";
+                card2Switch.color = autoSustains ? 0xFFFF2A3C : 0xFF555566;
+            }
+            if (card2Body != null) {
+                card2Body.text = "Hold Notes: Full continuous hold tracking\nRelease Handling: Auto key-up at sustain end\nSplash Effects: Enabled";
+            }
+        } else if (currentCategory == 1) {
+            if (contentTitle != null) contentTitle.text = "VISUAL & CAMERA SETTINGS";
+
+            if (card1Title != null) card1Title.text = "[A]  Hide Opponent";
+            if (card1Switch != null) {
+                card1Switch.text = hideOpponentStrum ? "[ ● ON ]" : "[ ○ OFF ]";
+                card1Switch.color = hideOpponentStrum ? 0xFFFF2A3C : 0xFF555566;
+            }
+            if (card1Body != null) {
+                card1Body.text = "Opponent Strumline: Hidden from screen\nOpponent Notes: Hidden and muted\nVisual Focus: Player 1 Strumline only";
+            }
+
+            if (card2Title != null) card2Title.text = "[B]  No Hurt Cam";
+            if (card2Switch != null) {
+                card2Switch.text = noHurtCam ? "[ ● ON ]" : "[ ○ OFF ]";
+                card2Switch.color = noHurtCam ? 0xFFFF2A3C : 0xFF555566;
+            }
+            if (card2Body != null) {
+                card2Body.text = "Camera Shaking: 100% blocked on all cameras\nScreen Tilt & Jitter: Neutralized\nPlayState Safe: No transition blocking";
+            }
+        } else if (currentCategory == 2) {
+            if (contentTitle != null) contentTitle.text = "LAYOUT & MISC SETTINGS";
+
+            if (card1Title != null) card1Title.text = "[A]  Downscroll Notes";
+            if (card1Switch != null) {
+                card1Switch.text = downscroll ? "[ ● ON ]" : "[ ○ OFF ]";
+                card1Switch.color = downscroll ? 0xFFFF2A3C : 0xFF555566;
+            }
+            if (card1Body != null) {
+                card1Body.text = "Strumline Position: Bottom of the screen\nScroll Direction: Notes fall downwards from top\nSustain Tails: Inverted orientation";
+            }
+
+            if (card2Title != null) card2Title.text = "[B]  Top Progress Bar";
+            if (card2Switch != null) {
+                card2Switch.text = topProgressBar ? "[ ● ON ]" : "[ ○ OFF ]";
+                card2Switch.color = topProgressBar ? 0xFFFF2A3C : 0xFF555566;
+            }
+            if (card2Body != null) {
+                card2Body.text = "Health & Time Bar: Repositioned to top\nPlayer / Opponent Icons: Top aligned\nLayout: Optimized for Downscroll visibility";
+            }
+        }
+    }
+
+    function suppressDeadNotes() {
+        try {
+            var i:Int = deadNotes.length - 1;
+            while (i >= 0) {
+                var dNote = deadNotes[i];
+                if (dNote == null || dNote.members != null) {
+                    deadNotes.splice(i, 1);
+                } else {
+                    hideNoteSprite(dNote);
+                }
+                i--;
+            }
+        } catch (e:Dynamic) {}
+    }
+
+    function hideNoteSprite(note:Dynamic) {
+        try {
+            if (note == null || note.members != null) return;
+            note.visible = false;
+            note.alpha = 0.0;
+            note.active = false;
+            note.exists = false;
+            note.canBeHit = false;
+            note.hasBeenHit = true;
+            note.wasGoodHit = true;
+            note.x = -99999.0;
+            note.y = -99999.0;
+            note.cameras = [];
+            if (note.scale != null && note.scale.set != null) {
+                note.scale.set(0.0, 0.0);
+            }
+        } catch (e:Dynamic) {}
+    }
+
+    function processBotLogic() {
+        try {
+            var ps = PlayState.instance;
+            if (ps == null) return;
+
+            var curPos:Float = 0.0;
+            if (Conductor.instance != null && Conductor.instance.songPosition != null) {
+                curPos = Conductor.instance.songPosition;
+            } else if (FlxG.sound.music != null && FlxG.sound.music.playing) {
+                curPos = FlxG.sound.music.time;
+            }
+
+            if (curPos <= 0.0) return;
+
+            var strum = ps.playerStrumline;
+            if (strum == null) return;
+
+            var targets:Array<Dynamic> = [];
+
+            if (strum.notes != null) {
+                var n = (strum.notes.members != null) ? strum.notes.members : strum.notes;
+                for (i in 0...n.length) {
+                    var item = n[i];
+                    if (item != null && item.members == null) targets.push(item);
+                }
+            }
+
+            if (strum.notesByDirection != null) {
+                for (d in 0...strum.notesByDirection.length) {
+                    var dirG = strum.notesByDirection[d];
+                    if (dirG != null) {
+                        var dg = (dirG.members != null) ? dirG.members : dirG;
+                        for (k in 0...dg.length) {
+                            var item = dg[k];
+                            if (item != null && item.members == null) targets.push(item);
+                        }
+                    }
+                }
+            }
+
+            if (autoSustains && strum.holdNotes != null) {
+                var hn = (strum.holdNotes.members != null) ? strum.holdNotes.members : strum.holdNotes;
+                for (j in 0...hn.length) {
+                    var item = hn[j];
+                    if (item != null && item.members == null) targets.push(item);
+                }
+            }
+
+            for (idx in 0...targets.length) {
+                var note = targets[idx];
+                if (note == null || note.members != null) continue;
+
+                var noteTime:Float = -99999.0;
+                try {
+                    if (note.noteData != null && note.noteData.time != null) {
+                        noteTime = note.noteData.time;
+                    } else if (note.time != null) {
+                        noteTime = note.time;
+                    } else if (note.strumTime != null) {
+                        noteTime = note.strumTime;
+                    } else if (note.songTime != null) {
+                        noteTime = note.songTime;
+                    }
+                } catch (e:Dynamic) {}
+
+                if (noteTime < 0.0) continue;
+
+                var rawDir:Int = 0;
+                var hasDir:Bool = false;
+                try {
+                    if (note.noteData != null && note.noteData.direction != null) {
+                        rawDir = note.noteData.direction;
+                        hasDir = true;
+                    } else if (note.noteData != null && note.noteData.data != null) {
+                        rawDir = note.noteData.data;
+                        hasDir = true;
+                    } else if (note.direction != null) {
+                        rawDir = note.direction;
+                        hasDir = true;
+                    } else if (note.column != null) {
+                        rawDir = note.column;
+                        hasDir = true;
+                    }
+                } catch (e:Dynamic) {}
+
+                if (!hasDir) continue;
+                var dir:Int = rawDir % 4;
+                if (dir < 0 || dir > 3) continue;
+
+                if (note.hasBeenHit == true || note.wasGoodHit == true) {
+                    hideNoteSprite(note);
+                    continue;
+                }
+
+                var susLen:Float = 0.0;
+                try {
+                    if (note.noteData != null && note.noteData.length != null) {
+                        susLen = note.noteData.length;
+                    } else if (note.sustainLength != null) {
+                        susLen = note.sustainLength;
+                    } else if (note.length != null) {
+                        susLen = note.length;
+                    }
+                } catch (e:Dynamic) {}
+
+                var diff:Float = noteTime - curPos;
+
+                if (diff <= 18.0 && diff >= -110.0) {
+                    var holdDur:Float = (susLen > 0.0) ? (susLen + 35.0) : 90.0;
+
+                    var absDiff:Float = Math.abs(diff);
+                    var ratingName:String = (absDiff <= 35.0) ? "sick" : ((absDiff <= 75.0) ? "good" : "bad");
+                    var addScore:Int = (ratingName == "sick") ? 350 : ((ratingName == "good") ? 200 : 100);
+
+                    pressKey(dir);
+                    receptorResetTimes[dir] = curPos + holdDur;
+                    isReceptorActive[dir] = true;
+
+                    try {
+                        if (ps.goodNoteHit != null) ps.goodNoteHit(note);
+                        else if (ps.onNoteHit != null) ps.onNoteHit(note);
+                        else if (ps.hitNote != null) ps.hitNote(note);
+                        else if (strum.hitNote != null) strum.hitNote(note);
+                        else if (strum.onNoteHit != null) strum.onNoteHit(note);
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (note.hit != null) note.hit();
+                        else if (note.onHit != null) note.onHit();
+                        else if (note.goodHit != null) note.goodHit();
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (ps.songScore != null) ps.songScore += addScore;
+                        if (ps.score != null) ps.score += addScore;
+                        if (ps.combo != null) ps.combo += 1;
+                        if (ps.health != null && ps.health < 2.0) ps.health += 0.025;
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (ps.comboPopUps != null) {
+                            if (ps.comboPopUps.displayRating != null) ps.comboPopUps.displayRating(ratingName);
+                            else if (ps.comboPopUps.displayJudgement != null) ps.comboPopUps.displayJudgement(ratingName);
+                            else if (ps.comboPopUps.popUpScore != null) ps.comboPopUps.popUpScore(ratingName);
+                            else if (ps.comboPopUps.popupScore != null) ps.comboPopUps.popupScore(ratingName);
+                        }
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (ps.popUpScore != null) {
+                            ps.popUpScore(ratingName);
+                        } else if (ps.displayJudgement != null) {
+                            ps.displayJudgement(ratingName);
+                        } else if (ps.displayRating != null) {
+                            ps.displayRating(ratingName);
+                        } else if (ps.popupScore != null) {
+                            ps.popupScore(ratingName);
+                        }
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (strum.comboPopUps != null && strum.comboPopUps.displayRating != null) {
+                            strum.comboPopUps.displayRating(ratingName);
+                        } else if (strum.displayRating != null) {
+                            strum.displayRating(ratingName);
+                        } else if (strum.popUpScore != null) {
+                            strum.popUpScore(ratingName);
+                        }
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (strum.showNoteSplash != null) {
+                            strum.showNoteSplash(dir);
+                        } else if (strum.spawnNoteSplash != null) {
+                            strum.spawnNoteSplash(dir);
+                        } else if (ps.spawnNoteSplash != null) {
+                            ps.spawnNoteSplash(note);
+                        }
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        if (strum.strumlineNotes != null && strum.strumlineNotes.members != null) {
+                            var receptor = strum.strumlineNotes.members[dir];
+                            if (receptor != null && receptor.playAnimation != null) {
+                                receptor.playAnimation("confirm", true);
+                            }
+                        }
+                    } catch (e:Dynamic) {}
+
+                    try {
+                        var bf:Dynamic = (ps.currentStage != null && ps.currentStage.getBoyfriend != null) ? ps.currentStage.getBoyfriend() : (ps.boyfriend != null ? ps.boyfriend : ps.player);
+                        if (bf != null && bf.playAnimation != null && dir >= 0 && dir < singAnims.length) {
+                            bf.playAnimation(singAnims[dir], true);
+                        }
+                    } catch (e:Dynamic) {}
+
+                    deadNotes.push(note);
+                    hideNoteSprite(note);
+
+                    try {
+                        if (strum.notes != null && strum.notes.remove != null) {
+                            strum.notes.remove(note, true);
+                        }
+                        if (strum.holdNotes != null && strum.holdNotes.remove != null) {
+                            strum.holdNotes.remove(note, true);
+                        }
+                        if (ps.notes != null && ps.notes.remove != null) {
+                            ps.notes.remove(note, true);
+                        }
+                        if (note.kill != null) {
+                            note.kill();
+                        }
+                    } catch (e:Dynamic) {}
+                }
+            }
+
+            for (d in 0...4) {
+                if (isReceptorActive[d] && curPos >= receptorResetTimes[d]) {
+                    releaseKey(d);
+                    isReceptorActive[d] = false;
+
+                    try {
+                        if (strum.strumlineNotes != null && strum.strumlineNotes.members != null) {
+                            var receptor = strum.strumlineNotes.members[d];
+                            if (receptor != null && receptor.playAnimation != null) {
+                                receptor.playAnimation("static", true);
+                            }
+                        }
+                    } catch (e:Dynamic) {}
+                }
+            }
+        } catch (e:Dynamic) {}
+    }
+
+    function pressKey(dir:Int) {
+        try {
+            if (FlxG.stage == null) return;
+            var kCode = arrowCodes[dir];
+            var dCode = dfjkCodes[dir];
+            var wCode = wasdCodes[dir];
+
+            FlxG.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, true, 0, kCode));
+            FlxG.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, true, 0, dCode));
+            FlxG.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, true, 0, wCode));
+        } catch (e:Dynamic) {}
+    }
+
+    function releaseKey(dir:Int) {
+        try {
+            if (FlxG.stage == null) return;
+            var kCode = arrowCodes[dir];
+            var dCode = dfjkCodes[dir];
+            var wCode = wasdCodes[dir];
+
+            FlxG.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, true, 0, kCode));
+            FlxG.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, true, 0, dCode));
+            FlxG.stage.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, true, 0, wCode));
+        } catch (e:Dynamic) {}
+    }
+
+    override function onDestroy(event) {
+        super.onDestroy(event);
+        resetReceptors();
+        deadNotes = [];
+        guiGroup = null;
+        initCardGroup = null;
+        isGuiOpen = false;
+    }
+}
